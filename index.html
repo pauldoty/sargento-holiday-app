@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holiday Gift Redemption</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; display: flex; justify-content: center; padding: 50px 20px; color: #333; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; width: 100%; }
+        h1 { font-size: 24px; margin-top: 0; color: #111; }
+        label { display: block; margin-top: 20px; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        button { width: 100%; padding: 14px; background-color: #0056b3; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 25px; transition: background 0.2s; }
+        button:hover { background-color: #004494; }
+        .hidden { display: none; }
+        .error { color: #d93025; background: #fce8e6; padding: 10px; border-radius: 6px; margin-top: 15px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Redeem Your Holiday Gift</h1>
+    
+    <div id="step-login">
+        <label>Enter your 9-digit Redemption Code:</label>
+        <input type="text" id="code-input" placeholder="e.g., 43-5443562" />
+        <div id="login-error" class="hidden error"></div>
+        <button id="verify-btn">Verify Code</button>
+    </div>
+
+    <div id="step-selection" class="hidden">
+        <p>Welcome! Please select your gift below.</p>
+        
+        <label>Choose your Gift Box:</label>
+        <select id="box-select">
+            <option value="">-- Select a Gift Box --</option>
+        </select>
+
+        <div id="slot-container" class="hidden">
+            <label>Choose your Delivery Time:</label>
+            <select id="slot-select">
+                <option value="">-- Select a Delivery Time --</option>
+            </select>
+        </div>
+
+        <div id="submit-error" class="hidden error"></div>
+        <button id="submit-btn">Submit Order</button>
+    </div>
+
+    <div id="step-success" class="hidden">
+        <h2>🎉 Success!</h2>
+        <p>Your gift box selection has been recorded successfully. Happy Holidays!</p>
+    </div>
+</div>
+
+<script>
+    let currentRecordId = "";
+
+    document.getElementById('verify-btn').addEventListener('click', async () => {
+        const code = document.getElementById('code-input').value.trim();
+        const errorDiv = document.getElementById('login-error');
+        const btn = document.getElementById('verify-btn');
+        
+        if (!code) return;
+        btn.textContent = "Checking...";
+        errorDiv.classList.add('hidden');
+
+        try {
+            // Call our secure Netlify backend
+            const response = await fetch('/.netlify/functions/api', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'verify', code: code })
+            });
+            const data = await response.json();
+
+            if (!response.ok) throw new Error(data.error || "Invalid code or already claimed.");
+
+            // Save the Airtable Record ID so we know who to update later
+            currentRecordId = data.user.id;
+
+            // Populate Gift Boxes
+            const boxSelect = document.getElementById('box-select');
+            data.boxes.forEach(box => {
+                boxSelect.innerHTML += `<option value="${box.id}">${box.fields['Box Name']}</option>`;
+            });
+
+            // Populate Delivery Slots (if applicable)
+            if (data.user.fields['Fulfillment Eligibility'] === 'Local Delivery' && data.slots.length > 0) {
+                document.getElementById('slot-container').classList.remove('hidden');
+                const slotSelect = document.getElementById('slot-select');
+                data.slots.forEach(slot => {
+                    slotSelect.innerHTML += `<option value="${slot.id}">${slot.fields['Slot Label']}</option>`;
+                });
+            }
+
+            // Move to next step
+            document.getElementById('step-login').classList.add('hidden');
+            document.getElementById('step-selection').classList.remove('hidden');
+
+        } catch (err) {
+            errorDiv.textContent = err.message;
+            errorDiv.classList.remove('hidden');
+        } finally {
+            btn.textContent = "Verify Code";
+        }
+    });
+
+    document.getElementById('submit-btn').addEventListener('click', async () => {
+        const boxId = document.getElementById('box-select').value;
+        const slotId = document.getElementById('slot-select').value;
+        const needsSlot = !document.getElementById('slot-container').classList.contains('hidden');
+        const errorDiv = document.getElementById('submit-error');
+        const btn = document.getElementById('submit-btn');
+
+        errorDiv.classList.add('hidden');
+
+        if (!boxId) return errorDiv.textContent = "Please select a gift box.", errorDiv.classList.remove('hidden');
+        if (needsSlot && !slotId) return errorDiv.textContent = "Please select a delivery time.", errorDiv.classList.remove('hidden');
+
+        btn.textContent = "Submitting...";
+
+        try {
+            const response = await fetch('/.netlify/functions/api', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'submit', recordId: currentRecordId, boxId, slotId })
+            });
+            
+            if (!response.ok) throw new Error("Failed to submit. Please try again.");
+
+            document.getElementById('step-selection').classList.add('hidden');
+            document.getElementById('step-success').classList.remove('hidden');
+        } catch (err) {
+            errorDiv.textContent = err.message;
+            errorDiv.classList.remove('hidden');
+            btn.textContent = "Submit Order";
+        }
+    });
+</script>
+</body>
+</html>
