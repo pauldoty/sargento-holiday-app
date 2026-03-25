@@ -66,19 +66,32 @@ exports.handler = async (event) => {
             
             const updateFields = {
                 "Status": "Claimed",
-                "Gift Box": [boxId],
-                "Claimed At": new Date().toISOString()
+                "Gift Box": [boxId]
             };
-            if (slotId) updateFields["Delivery Slot"] = [slotId];
+            
+            // Add the delivery slot if one was selected
+            if (slotId) {
+                updateFields["Delivery Slot"] = [slotId];
+            }
+
+            // Add the timestamp
+            updateFields["Claimed At"] = new Date().toISOString();
 
             const updateUrl = `https://api.airtable.com/v0/${BASE_ID}/Redemptions/${recordId}`;
             const updateRes = await fetch(updateUrl, {
                 method: 'PATCH',
                 headers: headers,
-                body: JSON.stringify({ fields: updateFields })
+                body: JSON.stringify({ 
+                    fields: updateFields,
+                    typecast: true  // Forces Airtable to accept the data formats!
+                })
             });
 
-            if (!updateRes.ok) throw new Error("Failed to update Airtable.");
+            // If Airtable rejects it, grab the EXACT error message so we can see it
+            if (!updateRes.ok) {
+                const errData = await updateRes.json();
+                throw new Error("Airtable says: " + (errData.error.message || "Unknown data formatting error."));
+            }
 
             return { statusCode: 200, body: JSON.stringify({ success: true }) };
         }
