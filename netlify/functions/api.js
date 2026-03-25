@@ -61,9 +61,11 @@ exports.handler = async (event) => {
             };
         }
 
+        // ACTION 2: SUBMIT ORDER & UPDATE AIRTABLE
         if (body.action === 'submit') {
             const { recordId, boxId, slotId } = body;
             
+            // We only send the fields Airtable allows us to edit!
             const updateFields = {
                 "Status": "Claimed",
                 "Gift Box": [boxId]
@@ -74,20 +76,16 @@ exports.handler = async (event) => {
                 updateFields["Delivery Slot"] = [slotId];
             }
 
-            // Add the timestamp
-            updateFields["Claimed At"] = new Date().toISOString();
-
             const updateUrl = `https://api.airtable.com/v0/${BASE_ID}/Redemptions/${recordId}`;
             const updateRes = await fetch(updateUrl, {
                 method: 'PATCH',
                 headers: headers,
                 body: JSON.stringify({ 
                     fields: updateFields,
-                    typecast: true  // Forces Airtable to accept the data formats!
+                    typecast: true 
                 })
             });
 
-            // If Airtable rejects it, grab the EXACT error message so we can see it
             if (!updateRes.ok) {
                 const errData = await updateRes.json();
                 throw new Error("Airtable says: " + (errData.error.message || "Unknown data formatting error."));
