@@ -1,7 +1,6 @@
 // /netlify/functions/api.js
 
 exports.handler = async (event) => {
-    // These environmental variables will be set securely in the Netlify Dashboard
     const API_KEY = process.env.AIRTABLE_PAT; 
     const BASE_ID = process.env.AIRTABLE_BASE_ID;
     
@@ -14,11 +13,10 @@ exports.handler = async (event) => {
     };
 
     try {
-        // ACTION 1: VERIFY CODE & FETCH OPTIONS
         if (body.action === 'verify') {
             const code = body.code;
             
-            // 1. Find the User Record
+            // 1. Find User
             const searchUrl = `https://api.airtable.com/v0/${BASE_ID}/Redemptions?filterByFormula=AND({Redemption Code}='${code}', {Status}='Available')`;
             const userRes = await fetch(searchUrl, { headers });
             const userData = await userRes.json();
@@ -28,17 +26,26 @@ exports.handler = async (event) => {
             }
             
             const userRecord = userData.records[0];
-            const zone = userRecord.fields['Zone'];
             
-            // 2. Fetch Active Gift Boxes
-            const boxesUrl = `https://api.airtable.com/v0/${BASE_ID}/Gift%20Boxes?filterByFormula={Is Active}=1`;
+            // Helper to handle Airtable Lookups
+            const getFieldValue = (record, fieldName) => {
+                const val = record.fields[fieldName];
+                return Array.isArray(val) ? val[0] : val;
+            };
+
+            const fulfillment = getFieldValue(userRecord, 'Fulfillment Eligibility');
+            const zone = getFieldValue(userRecord, 'Zone');
+            
+            // 2. Fetch Active Gift Boxes (Fixed Checkbox Logic)
+            const boxesUrl = `https://api.airtable.com/v0/${BASE_ID}/Gift%20Boxes?filterByFormula={Is Active}`;
             const boxesRes = await fetch(boxesUrl, { headers });
             const boxesData = await boxesRes.json();
 
-            // 3. Fetch Delivery Slots (Only if eligible)
+            // 3. Fetch Delivery Slots (Fixed Emoji Logic)
             let slots = [];
-            if (userRecord.fields['Fulfillment Eligibility'] === 'Local Delivery') {
-                const slotsUrl = `https://api.airtable.com/v0/${BASE_ID}/Delivery%20Slots?filterByFormula=AND({Zone}='${zone}', {Slot Status}='Available')`;
+            if (fulfillment === 'Local Delivery') {
+                // Using FIND() to search for the word 'Available' so the 🟢 emoji doesn't break the filter
+                const slotsUrl = `https://api.airtable.com/v0/${BASE_ID}/Delivery%20Slots?filterByFormula=AND({Zone}='${zone}', FIND('Available', {Slot Status}) > 0)`;
                 const slotsRes = await fetch(slotsUrl, { headers });
                 const slotsData = await slotsRes.json();
                 slots = slotsData.records || [];
@@ -48,13 +55,12 @@ exports.handler = async (event) => {
                 statusCode: 200,
                 body: JSON.stringify({
                     user: userRecord,
-                    boxes: boxesData.records,
+                    boxes: boxesData.records || [],
                     slots: slots
                 })
             };
         }
 
-        // ACTION 2: SUBMIT ORDER & UPDATE AIRTABLE
         if (body.action === 'submit') {
             const { recordId, boxId, slotId } = body;
             
