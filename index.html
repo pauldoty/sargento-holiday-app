@@ -14,6 +14,11 @@
         button:hover { background-color: #004494; }
         .hidden { display: none; }
         .error { color: #d93025; background: #fce8e6; padding: 10px; border-radius: 6px; margin-top: 15px; font-size: 14px; }
+        
+        /* New Personalization Card Styles */
+        .welcome-card { background: #eef2f6; border: 1px solid #d0e2f5; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+        .welcome-card h2 { margin-top: 0; color: #004494; font-size: 20px; }
+        .welcome-card p { margin: 5px 0 0 0; font-size: 15px; }
     </style>
 </head>
 <body>
@@ -29,7 +34,12 @@
     </div>
 
     <div id="step-selection" class="hidden">
-        <p>Welcome! Please select your gift below.</p>
+        
+        <div class="welcome-card">
+            <h2>Welcome, <span id="user-name"></span>!</h2>
+            <p><strong>Fulfillment Method:</strong> <span id="user-fulfillment"></span></p>
+            <p><strong>Shipping Address:</strong> <span id="user-address"></span></p>
+        </div>
         
         <label>Choose your Gift Box:</label>
         <select id="box-select">
@@ -56,6 +66,9 @@
 <script>
     let currentRecordId = "";
 
+    // Helper function to safely extract Airtable data (handles Lookups which return as Arrays)
+    const getField = (data, field) => Array.isArray(data[field]) ? data[field][0] : data[field];
+
     document.getElementById('verify-btn').addEventListener('click', async () => {
         const code = document.getElementById('code-input').value.trim();
         const errorDiv = document.getElementById('login-error');
@@ -66,7 +79,6 @@
         errorDiv.classList.add('hidden');
 
         try {
-            // Call our secure Netlify backend
             const response = await fetch('/.netlify/functions/api', {
                 method: 'POST',
                 body: JSON.stringify({ action: 'verify', code: code })
@@ -75,17 +87,27 @@
 
             if (!response.ok) throw new Error(data.error || "Invalid code or already claimed.");
 
-            // Save the Airtable Record ID so we know who to update later
             currentRecordId = data.user.id;
+            const fields = data.user.fields;
+            const fulfillmentType = getField(fields, 'Fulfillment Eligibility');
 
-            // Populate Gift Boxes
+            // 1. POPULATE PERSONALIZATION
+            document.getElementById('user-name').textContent = getField(fields, 'Recipient Name') || 'Guest';
+            document.getElementById('user-fulfillment').textContent = fulfillmentType || 'Standard';
+            
+            const street = getField(fields, 'Street Address') || '';
+            const city = getField(fields, 'City') || '';
+            const state = getField(fields, 'State') || '';
+            document.getElementById('user-address').textContent = `${street}, ${city}, ${state}`;
+
+            // 2. POPULATE BOXES
             const boxSelect = document.getElementById('box-select');
             data.boxes.forEach(box => {
                 boxSelect.innerHTML += `<option value="${box.id}">${box.fields['Box Name']}</option>`;
             });
 
-            // Populate Delivery Slots (if applicable)
-            if (data.user.fields['Fulfillment Eligibility'] === 'Local Delivery' && data.slots.length > 0) {
+            // 3. CONDITIONAL DELIVERY SLOTS
+            if (fulfillmentType === 'Local Delivery' && data.slots.length > 0) {
                 document.getElementById('slot-container').classList.remove('hidden');
                 const slotSelect = document.getElementById('slot-select');
                 data.slots.forEach(slot => {
