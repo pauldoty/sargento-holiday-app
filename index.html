@@ -6,19 +6,28 @@
     <title>Holiday Gift Redemption</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; display: flex; justify-content: center; padding: 50px 20px; color: #333; }
-        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; width: 100%; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; width: 100%; }
         h1 { font-size: 24px; margin-top: 0; color: #111; }
         label { display: block; margin-top: 20px; font-weight: 600; font-size: 14px; margin-bottom: 8px; }
-        input, select { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+        input[type="text"], select { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
         button { width: 100%; padding: 14px; background-color: #0056b3; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 25px; transition: background 0.2s; }
         button:hover { background-color: #004494; }
         .hidden { display: none; }
         .error { color: #d93025; background: #fce8e6; padding: 10px; border-radius: 6px; margin-top: 15px; font-size: 14px; }
         
-        /* New Personalization Card Styles */
+        /* Personalization Card */
         .welcome-card { background: #eef2f6; border: 1px solid #d0e2f5; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
         .welcome-card h2 { margin-top: 0; color: #004494; font-size: 20px; }
         .welcome-card p { margin: 5px 0 0 0; font-size: 15px; }
+
+        /* Gift Box Image Grid Elements */
+        .box-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .box-card { border: 2px solid #e0e0e0; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; background: white; transition: all 0.2s ease; }
+        .box-card:hover { border-color: #a0c4ff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .box-card.selected { border-color: #0056b3; background-color: #f0f7ff; box-shadow: 0 0 0 2px #0056b3; }
+        .box-image { width: 100%; height: 160px; object-fit: cover; border-radius: 6px; margin-bottom: 12px; background: #f9f9f9; }
+        .box-title { font-weight: bold; font-size: 16px; margin: 0 0 5px 0; color: #222; }
+        .box-desc { font-size: 13px; color: #666; margin: 0; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -42,9 +51,9 @@
         </div>
         
         <label>Choose your Gift Box:</label>
-        <select id="box-select">
-            <option value="">-- Select a Gift Box --</option>
-        </select>
+        
+        <div id="box-grid" class="box-grid"></div>
+        <input type="hidden" id="selected-box-id" value="">
 
         <div id="slot-container" class="hidden">
             <label>Choose your Delivery Time:</label>
@@ -66,7 +75,6 @@
 <script>
     let currentRecordId = "";
 
-    // Helper function to safely extract Airtable data (handles Lookups which return as Arrays)
     const getField = (data, field) => Array.isArray(data[field]) ? data[field][0] : data[field];
 
     document.getElementById('verify-btn').addEventListener('click', async () => {
@@ -100,10 +108,40 @@
             const state = getField(fields, 'State') || '';
             document.getElementById('user-address').textContent = `${street}, ${city}, ${state}`;
 
-            // 2. POPULATE BOXES
-            const boxSelect = document.getElementById('box-select');
+            // 2. BUILD IMAGE GRID FOR BOXES
+            const boxGrid = document.getElementById('box-grid');
+            boxGrid.innerHTML = ''; // clear any previous items
+            
             data.boxes.forEach(box => {
-                boxSelect.innerHTML += `<option value="${box.id}">${box.fields['Box Name']}</option>`;
+                const boxName = box.fields['Box Name'] || 'Gift Box';
+                const description = box.fields['Description'] || '';
+                
+                // Extract image URL (Airtable sends an array of image objects)
+                let imageUrl = 'https://via.placeholder.com/300x200?text=No+Image'; // Fallback
+                if (box.fields['Image'] && box.fields['Image'].length > 0) {
+                    imageUrl = box.fields['Image'][0].url;
+                }
+
+                // Create individual card
+                const card = document.createElement('div');
+                card.className = 'box-card';
+                card.innerHTML = `
+                    <img src="${imageUrl}" alt="${boxName}" class="box-image">
+                    <h3 class="box-title">${boxName}</h3>
+                    <p class="box-desc">${description}</p>
+                `;
+
+                // Add click event to make it selectable
+                card.addEventListener('click', () => {
+                    // Remove blue border from all cards
+                    document.querySelectorAll('.box-card').forEach(c => c.classList.remove('selected'));
+                    // Add blue border to clicked card
+                    card.classList.add('selected');
+                    // Store the internal Airtable ID in our hidden input
+                    document.getElementById('selected-box-id').value = box.id;
+                });
+
+                boxGrid.appendChild(card);
             });
 
             // 3. CONDITIONAL DELIVERY SLOTS
@@ -128,7 +166,8 @@
     });
 
     document.getElementById('submit-btn').addEventListener('click', async () => {
-        const boxId = document.getElementById('box-select').value;
+        // Grab the ID from the hidden input we update when clicking an image
+        const boxId = document.getElementById('selected-box-id').value;
         const slotId = document.getElementById('slot-select').value;
         const needsSlot = !document.getElementById('slot-container').classList.contains('hidden');
         const errorDiv = document.getElementById('submit-error');
@@ -136,7 +175,8 @@
 
         errorDiv.classList.add('hidden');
 
-        if (!boxId) return errorDiv.textContent = "Please select a gift box.", errorDiv.classList.remove('hidden');
+        // Validation checking
+        if (!boxId) return errorDiv.textContent = "Please select a gift box by clicking on an image.", errorDiv.classList.remove('hidden');
         if (needsSlot && !slotId) return errorDiv.textContent = "Please select a delivery time.", errorDiv.classList.remove('hidden');
 
         btn.textContent = "Submitting...";
@@ -147,7 +187,10 @@
                 body: JSON.stringify({ action: 'submit', recordId: currentRecordId, boxId, slotId })
             });
             
-            if (!response.ok) throw new Error("Failed to submit. Please try again.");
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error("Airtable says: " + (errData.error?.message || "Unknown error."));
+            }
 
             document.getElementById('step-selection').classList.add('hidden');
             document.getElementById('step-success').classList.remove('hidden');
